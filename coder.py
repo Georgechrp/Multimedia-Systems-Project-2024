@@ -1,7 +1,7 @@
 import cv2
 
-video_path = "video.avi"   # το βίντεο υπάρχει στο path C:\Users\georg\GITHUB PROJECTS\MultimediaSystemsProject
-video = cv2.VideoCapture(video_path)
+video_path = "video.avi"   # το βίντεο υπάρχει στον ίδιο φάκελο με το coder.py
+video = cv2.VideoCapture(video_path) #δημιουργεί ένα αντικείμενο VideoCapture(for reading & saving)
 
 frames = []
 frame_count = 0
@@ -9,12 +9,13 @@ frame_count = 0
 while video.isOpened():   # Διαβάζουμε και αποθηκεύουμε κάθε καρέ
     flag, frame = video.read()
     if not flag: break   #Ουσιαστικά, η flag θα γίνει false όταν δεν υπάρχει επόμενο frame
-    frames.append(frame)  #Ο πίνακας frames θα μας χρειαστεί αργότερα
+    frames.append(frame)
     frame_count += 1
 
 video.release() #διασφαλίζουμε ότι το αρχείο δεν παραμένει ανοιχτο
 
-print(f"Σύνολο καρέ: {frame_count}")
+#print(f"Σύνολο καρέ: {frame_count}")
+#print(f"Ολα τα frames: {frames}")
 
 '''- - - - - Κωδικοποίηση - - - - -'''
 import numpy as np
@@ -28,11 +29,13 @@ for i in range(frame_count):  #Για κάθε καρέ
         previous_frame = frames[i - 1]
         error_frame = np.clip(frames[i].astype(int) - previous_frame.astype(int), 0, 255).astype(np.uint8)
         encoded_frames.append(error_frame)
-        # Αποθήκευση της εικόνας σφάλματος
+
+        '''# Αποθήκευση της εικόνας σφάλματος
         if i==1:
             output_path = f"error_frame_{i}.png"
-            cv2.imwrite(output_path, error_frame)
-            print(f"Η εικόνα σφάλματος αποθηκεύτηκε στο: {output_path}")
+            #cv2.imwrite(output_path, error_frame)
+            print(f"Η εικόνα σφάλματος αποθηκεύτηκε στο: {output_path}")'''
+
 
 
 '''- - - - - Αποκωδικοποίηση - - - - -'''
@@ -47,8 +50,8 @@ for i in range(frame_count):  # Για κάθε καρέ
         previous_frame = decoded_frames[-1]
         reconstructed_frame = np.clip(previous_frame.astype(int) + encoded_frames[i].astype(int), 0, 255).astype(np.uint8) # προσθέτουμε την εικόνα σφάλματος
         decoded_frames.append(reconstructed_frame)
+    # Εκτύπωση του καρέ (κανονικά μπορεί να είναι και αποθήκευση ή αποθήκευση στο δίσκο)
+    output_path = f"decoded_frame_{i}.png"
+    cv2.imwrite(output_path, decoded_frames[i])
+    print(f"Η αποκωδικοποιημένη εικόνα αποθηκεύτηκε στο: {output_path}")
 
-# Παράδειγμα αποθήκευσης ανακατασκευασμένου καρέ
-output_reconstructed_frame = "reconstructed_frame_1.png"
-cv2.imwrite(output_reconstructed_frame, decoded_frames[1])
-print(f"Το ανακατασκευασμένο καρέ αποθηκεύτηκε στο: {output_reconstructed_frame}")
