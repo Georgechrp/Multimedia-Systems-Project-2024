@@ -1,47 +1,27 @@
+import cv2
 import numpy as np
+import os
 
+def split_into_macroblocks(frame_path, block_size=16):
+    # Φόρτωση καρέ
+    frame = cv2.imread(frame_path, cv2.IMREAD_GRAYSCALE)  # Ανάγνωση σε grayscale
+    height, width = frame.shape
 
-def calculate_motion_vectors(prev_frame, curr_frame, block_size=16, search_radius=8):
-    height, width = prev_frame.shape
-    motion_vectors = np.zeros((height // block_size, width // block_size, 2), dtype=np.int32)
-    compensated_frame = np.zeros_like(curr_frame)
+    # Επικύρωση διαστάσεων
+    if height % block_size != 0 or width % block_size != 0:
+        raise ValueError("Οι διαστάσεις του καρέ δεν είναι πολλαπλάσια του block_size.")
 
-    # Διαίρεση σε macroblocks
-    for i in range(0, height, block_size):
-        for j in range(0, width, block_size):
-            best_match = None
-            min_error = float('inf')
+    # Δημιουργία macroblocks
+    macroblocks = []
+    for y in range(0, height, block_size):
+        for x in range(0, width, block_size):
+            block = frame[y:y + block_size, x:x + block_size]
+            macroblocks.append(block)
 
-            # Macroblock στο τρέχον πλαίσιο
-            curr_block = curr_frame[i:i + block_size, j:j + block_size]
+    return macroblocks
 
-            # Εξάντληση αναζήτησης
-            for dx in range(-search_radius, search_radius + 1):
-                for dy in range(-search_radius, search_radius + 1):
-                    ref_x, ref_y = i + dx, j + dy
+# Παράδειγμα χρήσης
+frame_path = "auxiliary2024/300 original frames/original_frame_0.png"  # Παράδειγμα καρέ
+macroblocks = split_into_macroblocks(frame_path)
 
-                    # Έλεγχος ορίων
-                    if (0 <= ref_x < height - block_size and
-                            0 <= ref_y < width - block_size):
-
-                        # Macroblock στο προηγούμενο πλαίσιο
-                        ref_block = prev_frame[ref_x:ref_x + block_size, ref_y:ref_y + block_size]
-
-                        # Υπολογισμός MAD
-                        error = np.sum(np.abs(curr_block - ref_block))
-
-                        # Ενημέρωση για το καλύτερο ταίριασμα
-                        if error < min_error:
-                            min_error = error
-                            best_match = (dx, dy)
-
-            # Καταγραφή διανύσματος κίνησης
-            motion_vectors[i // block_size, j // block_size] = best_match
-
-            # Εφαρμογή αντιστάθμισης
-            dx, dy = best_match
-            ref_x, ref_y = i + dx, j + dy
-            compensated_frame[i:i + block_size, j:j + block_size] = prev_frame[ref_x:ref_x + block_size,
-                                                                    ref_y:ref_y + block_size]
-
-    return motion_vectors, compensated_frame
+print(f"Το καρέ χωρίστηκε σε {len(macroblocks)} macroblocks.")

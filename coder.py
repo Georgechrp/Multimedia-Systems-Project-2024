@@ -95,7 +95,7 @@ def decode_video():
         cv2.imwrite(output_path, decoded_frame)
         #print(f"Η αποκωδικοποιημένη εικόνα αποθηκεύτηκε στο: {output_path}")
 
-    print(f"Η αποκωδικοποίηση ολοκληρώθηκε. Τα αποκωδικοποιημένα καρέ αποθηκεύτηκαν στο φάκελο: {decoded_folder}")
+        print(f"Η αποκωδικοποίηση ολοκληρώθηκε. Τα αποκωδικοποιημένα καρέ αποθηκεύτηκαν στο φάκελο: {decoded_folder}")
 
 def calculate_compression_ratio():
     if not os.path.exists(encoded_folder):
