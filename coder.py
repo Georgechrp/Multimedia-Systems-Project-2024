@@ -29,7 +29,7 @@ def main_menu():
             print("Μη έγκυρη επιλογή. Δοκιμάστε ξανά.")
 
 # Φόρτωση βίντεο
-video_path = "video.avi"  # Το βίντεο πρέπει να υπάρχει στον ίδιο φάκελο με το πρόγραμμα
+video_path = "auxiliary2024/video.avi"  # Το βίντεο πρέπει να υπάρχει στο path auxiliary2024/video.avi
 video = cv2.VideoCapture(video_path)  # Φόρτωση του βίντεο
 frames = []
 frame_count = 0
@@ -54,9 +54,9 @@ def encode_video():
 
     print("\nΕκτέλεση κωδικοποίησης...")
     for i in range(frame_count):
-        if i % GOP == 0:
-            encoded_frame = zlib.compress(frames[i].tobytes())
-        else:
+        if i % GOP == 0:  #Αν το καρέ είναι I - frame
+            encoded_frame = zlib.compress(frames[i].tobytes())#Μετατρέπει το numpy array του frame σε ακολουθία bytes και έπειτα συμπιέζει
+        else:      #Αν το καρέ είναι P - frame --> υπολογίζεται η εικονα σφάλματος και συμπιέζεται
             previous_frame = frames[i - 1]
             error_frame = (frames[i].astype(int) - previous_frame.astype(int)).astype(np.int16)
             encoded_frame = zlib.compress(error_frame.tobytes())
@@ -102,9 +102,11 @@ def calculate_compression_ratio():
         print("Ο φάκελος κωδικοποιημένων καρέ δεν υπάρχει. Πρέπει να εκτελέσετε πρώτα την κωδικοποίηση.")
         return
 
-    original_size = sum(frame.nbytes for frame in frames)
-    compressed_size = sum(os.path.getsize(f"{encoded_folder}/encoded_frame_{i}.bin") for i in range(frame_count))
+    original_size = sum(frame.nbytes for frame in frames) # συνολικό μέγεθος των αρχικών δεδομένων
 
+    compressed_size = sum(os.path.getsize(f"{encoded_folder}/encoded_frame_{i}.bin") for i in range(frame_count)) #συνολικό μέγεθος των συμπιεσμένων δεδομένων
+
+    # Υπολογίζει τον βαθμό συμπίεσης ως λόγο του αρχικού μεγέθους προς το συμπιεσμένο μέγεθος
     compression_ratio = original_size / compressed_size
     print(f"\nΒαθμός Συμπίεσης:")
     print(f"Μέγεθος αρχικών δεδομένων: {original_size / (1024 ** 2):.2f} MB")
