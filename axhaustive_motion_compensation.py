@@ -1,196 +1,78 @@
-import cv2
-import os
-import numpy as np
-import json
-# Μέγεθος macroblock
-MACROBLOCK_SIZE = 16
-
-# Ακτίνα αναζήτησης
-SEARCH_RADIUS = 8
-
-def main_menu():
-    while True:
-        print("\nΕπιλέξτε μια λειτουργία:")
-        print("1. Εξαγωγή frames σε ασπρόμαυρες εικόνες (new folder: frames)")
-        print("2. Διαίρεση πλαισίων σε macroblocks και αναζήτηση διανυσμάτων κίνησης")
-        print("3. Έξοδος")
-
-        choice = input("Εισάγετε τον αριθμό της επιλογής σας: ")
-
-        if choice == "1":
-            export_frames()
-        elif choice == "2":
-            process_macroblocks()
-        elif choice == "3":
-            print("Έξοδος από το πρόγραμμα.")
-            break
-        else:
-            print("Μη έγκυρη επιλογή. Δοκιμάστε ξανά.")
-
-def export_frames():
-    video_path = "video.avi"
-    output_folder = "frames"
-
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
-    video = cv2.VideoCapture(video_path)
-    if not video.isOpened():
-        print("Σφάλμα: Αδυναμία φόρτωσης του βίντεο.")
-        return
-
-    GOP = 12  # Κάθε 12ο καρέ είναι τύπου I, τα υπόλοιπα P
-    frames = []
-    frame_types = []
-    frame_count = 0
-
-    print("Ανάγνωση καρέ από το βίντεο και μετατροπή σε grayscale...")
-
-    while True:
-        success, frame = video.read()
-        if not success:
-            break
-
-        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        frames.append(gray_frame)
-
-        if frame_count % GOP == 0:
-            frame_types.append("I")
-        else:
-            frame_types.append("P")
-
-        output_path = f"{output_folder}/frame_{frame_count:03d}.png"
-        cv2.imwrite(output_path, gray_frame)
-        frame_count += 1
-
-    video.release()
-
-    print(f"Συνολικά καρέ: {frame_count}")
-    print(f"Αποθήκευση καρέ ολοκληρώθηκε στον φάκελο: {output_folder}")
-
-def process_macroblocks():
-    input_folder = "frames"
-
-    if not os.path.exists(input_folder):
-        print("Σφάλμα: Ο φάκελος frames δεν υπάρχει. Εκτελέστε πρώτα την εξαγωγή καρέ (Βήμα 1).")
-        return
-
-    # Φόρτωση όλων των καρέ
-    frames = []
-    filenames = sorted(os.listdir(input_folder))
-
-    print("Φόρτωση καρέ από τον φάκελο frames...")
-    for filename in filenames:
-        frame_path = os.path.join(input_folder, filename)
-        frame = cv2.imread(frame_path, cv2.IMREAD_GRAYSCALE)
-        frames.append(frame)
-
-    if len(frames) < 2:
-        print("Σφάλμα: Απαιτούνται τουλάχιστον δύο καρέ για επεξεργασία.")
-        return
-
-    # Εκτέλεση της διαδικασίας macroblocks και διανυσμάτων κίνησης
-    motion_vectors = process_frames(frames, MACROBLOCK_SIZE, SEARCH_RADIUS)
-
-    # Αποθήκευση των διανυσμάτων κίνησης σε αρχείο
-    output_file = "motion_vectors.txt"
-    with open(output_file, "w") as f:
-        for i, frame_vectors in enumerate(motion_vectors):
-            f.write(f"Frame {i + 1} (P-Frame):\n")
-            for x, y, motion_vector in frame_vectors:
-                f.write(f"  Block ({x},{y}): Motion Vector {motion_vector}\n")
-            f.write("\n")
-
-    print(f"Η διαδικασία ολοκληρώθηκε. Τα διανύσματα κίνησης αποθηκεύτηκαν στο: {output_file}")
-
-def divide_into_macroblocks(frame, block_size):
+def calculate_mad(block1, block2):
     """
-    Χωρίζει ένα καρέ σε macroblocks.
-    :param frame: Καρέ ως 2D πίνακας (grayscale).
-    :param block_size: Το μέγεθος των macroblocks.
-    :return: Λίστα από macroblocks.
+    Υπολογισμός της Μέσης Απόλυτης Διαφοράς (MAD) μεταξύ δύο macroblocks.
     """
-    height, width = frame.shape
-    macroblocks = []
-    for y in range(0, height, block_size):
-        for x in range(0, width, block_size):
-            # Ελέγχουμε αν το macroblock είναι εντός των ορίων
-            if y + block_size <= height and x + block_size <= width:
-                block = frame[y:y + block_size, x:x + block_size]
-                macroblocks.append((x, y, block))  # Αποθήκευση συντεταγμένων και block
-    return macroblocks
+    return np.sum(np.abs(block1 - block2))
 
+def full_search_motion_compensation():
+    if not os.path.exists(encoded_folder):
+        os.makedirs(encoded_folder)
 
-def find_best_match(current_block, reference_frame, x, y, block_size, search_radius):
-    """
-    Εντοπίζει το macroblock με την καλύτερη αντιστοιχία σε ένα πλαίσιο αναφοράς.
-    :param current_block: Το τρέχον macroblock.
-    :param reference_frame: Το προηγούμενο πλαίσιο αναφοράς.
-    :param x, y: Συντεταγμένες του τρέχοντος macroblock.
-    :param block_size: Μέγεθος του macroblock.
-    :param search_radius: Ακτίνα αναζήτησης.
-    :return: Συντεταγμένες (dx, dy) του διανύσματος κίνησης.
-    """
-    best_match = None
-    best_score = float('inf')  # Ξεκινάμε με την χειρότερη δυνατή βαθμολογία
-    height, width = reference_frame.shape
+    print("\nΕκτέλεση εξαντλητικής αντιστάθμισης κίνησης...")
+    motion_vectors = []  # Λίστα για τα διανύσματα κίνησης
+    error_frames = []    # Λίστα για τα πλαίσια σφάλματος
 
-    for dy in range(-search_radius, search_radius + 1):
-        for dx in range(-search_radius, search_radius + 1):
-            ref_x = x + dx
-            ref_y = y + dy
+    for i in range(frame_count):
+        if i % GOP == 0:  # Αν το καρέ είναι I-frame
+            encoded_frame = zlib.compress(frames[i].tobytes())  # Συμπίεση του I-frame
+            encoded_frames.append(encoded_frame)
+            motion_vectors.append(None)  # Δεν υπάρχει αντιστάθμιση κίνησης για I-frame
+            error_frames.append(np.zeros_like(frames[i]))  # Μηδενικό σφάλμα για I-frame
+        else:  # Αν το καρέ είναι P-frame
+            current_frame = frames[i]
+            previous_frame = frames[i - 1]
 
-            # Ελέγχουμε αν το υποψήφιο macroblock είναι εντός ορίων
-            if (0 <= ref_x < width - block_size + 1) and (0 <= ref_y < height - block_size + 1):
-                reference_block = reference_frame[ref_y:ref_y + block_size, ref_x:ref_x + block_size]
+            height, width, _ = current_frame.shape
+            error_frame = np.zeros_like(current_frame, dtype=np.int16)
+            frame_motion_vectors = []
 
-                # Υπολογισμός MAD (Mean Absolute Difference)
-                score = np.mean(np.abs(current_block - reference_block))
+            # Εξέταση όλων των macroblocks
+            for y in range(0, height, 16):
+                for x in range(0, width, 16):
+                    # Το macroblock του τρέχοντος καρέ
+                    current_block = current_frame[y:y + 16, x:x + 16]
 
-                # Ενημέρωση αν βρέθηκε καλύτερη αντιστοιχία
-                if score < best_score:
-                    best_score = score
-                    best_match = (dx, dy)
+                    # Ορισμός περιοχής αναζήτησης στο προηγούμενο καρέ
+                    y_min = max(0, y - 8)
+                    y_max = min(height - 16, y + 8)
+                    x_min = max(0, x - 8)
+                    x_max = min(width - 16, x + 8)
 
-    return best_match
+                    best_match = None
+                    min_mad = float('inf')
 
+                    # Εξάντληση σε όλη την περιοχή αναζήτησης
+                    for search_y in range(y_min, y_max + 1):
+                        for search_x in range(x_min, x_max + 1):
+                            # Το υποψήφιο macroblock από το προηγούμενο καρέ
+                            candidate_block = previous_frame[search_y:search_y + 16, search_x:search_x + 16]
 
-def process_frames(frames, macroblock_size, search_radius):
-    """
-    Διαδικασία αναζήτησης macroblocks για όλα τα P-frames.
-    :param frames: Λίστα με καρέ (grayscale).
-    :param macroblock_size: Μέγεθος των macroblocks.
-    :param search_radius: Ακτίνα αναζήτησης.
-    """
-    motion_vectors = []  # Αποθήκευση διανυσμάτων κίνησης
+                            # Υπολογισμός MAD
+                            mad = calculate_mad(current_block, candidate_block)
+                            if mad < min_mad:
+                                min_mad = mad
+                                best_match = (search_y, search_x)
 
-    for i in range(1, len(frames)):  # Ξεκινάμε από το 2ο καρέ (P-Frame)
-        current_frame = frames[i]
-        previous_frame = frames[i - 1]
+                    # Υπολογισμός διανύσματος κίνησης
+                    motion_vector = (best_match[0] - y, best_match[1] - x)
+                    frame_motion_vectors.append(motion_vector)
 
-        print(f"Επεξεργασία καρέ {i} (P-Frame)...")
+                    # Δημιουργία εικόνας σφάλματος
+                    matched_block = previous_frame[best_match[0]:best_match[0] + 16, best_match[1]:best_match[1] + 16]
+                    error_block = (current_block.astype(int) - matched_block.astype(int)).astype(np.int16)
+                    error_frame[y:y + 16, x:x + 16] = error_block
 
-        frame_motion_vectors = []
+            # Κωδικοποίηση του πλαισίου σφάλματος
+            encoded_frame = zlib.compress(error_frame.tobytes())
+            encoded_frames.append(encoded_frame)
+            motion_vectors.append(frame_motion_vectors)
+            error_frames.append(error_frame)
 
-        # Διαίρεση του τρέχοντος καρέ σε macroblocks
-        macroblocks = divide_into_macroblocks(current_frame, macroblock_size)
+            # Αποθήκευση του συμπιεσμένου πλαισίου σφάλματος
+            with open(f"{encoded_folder}/encoded_frame_{i}.bin", "wb") as f:
+                f.write(encoded_frame)
 
-        for (x, y, block) in macroblocks:
-            # Αναζήτηση του καλύτερου macroblock στο προηγούμενο πλαίσιο
-            motion_vector = find_best_match(block, previous_frame, x, y, macroblock_size, search_radius)
-            frame_motion_vectors.append((x, y, motion_vector))
+    print("Η εξαντλητική αντιστάθμιση κίνησης ολοκληρώθηκε.")
 
-            # Εκτύπωση του διανύσματος κίνησης
-            #print(f"Macroblock at ({x}, {y}): Motion vector {motion_vector}")
-
-        motion_vectors.append(frame_motion_vectors)
-
-        # Εκτύπωση των διανυσμάτων κίνησης για το καρέ
-        print(f"Motion vectors for frame {i}: {frame_motion_vectors}")
-    with open("motion_vectors.json", "w") as f:
-        json.dump(motion_vectors, f)
-    return motion_vectors
-
-if __name__ == "__main__":
-    main_menu()
-
+    # Επιστροφή των διανυσμάτων κίνησης και των πλαισίων σφάλματος
+    return motion_vectors, error_frames
