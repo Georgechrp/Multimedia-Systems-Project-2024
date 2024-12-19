@@ -128,8 +128,8 @@ def full_search_motion_compensation():
         os.makedirs(encoded_folder_motion)
 
     print("\nΕκτέλεση εξαντλητικής αντιστάθμισης κίνησης...")
-    motion_vectors = []  # Λίστα για τα διανύσματα κίνησης
-    error_frames = []    # Λίστα για τα πλαίσια σφάλματος
+    motion_vectors = []
+    error_frames = []
 
     for i in range(frame_count):
         if i % GOP == 0:  # Αν το καρέ είναι I-frame
@@ -148,10 +148,9 @@ def full_search_motion_compensation():
             # Εξέταση όλων των macroblocks
             for y in range(0, height, 16):
                 for x in range(0, width, 16):
-                    # Το macroblock του τρέχοντος καρέ
+                    # Το macroblock του τρέχοντος frame
                     current_block = current_frame[y:y + 16, x:x + 16]
 
-                    # Ορισμός περιοχής αναζήτησης στο προηγούμενο καρέ
                     y_min = max(0, y - 8)
                     y_max = min(height - 16, y + 8)
                     x_min = max(0, x - 8)
@@ -160,24 +159,24 @@ def full_search_motion_compensation():
                     best_match = None
                     min_mad = float('inf')
 
-                    # Εξάντληση σε όλη την περιοχή αναζήτησης
+                    # Search σε όλη την περιοχή αναζήτησης
                     for search_y in range(y_min, y_max + 1):
                         for search_x in range(x_min, x_max + 1):
                             # Το υποψήφιο macroblock από το προηγούμενο καρέ
                             candidate_block = previous_frame[search_y:search_y + 16, search_x:search_x + 16]
 
-                            # Εξασφάλισε ότι το υποψήφιο block έχει τις ίδιες διαστάσεις με το τρέχον block
+                            # Εξασφαλίζουμε ότι το υποψήφιο block έχει τις ίδιες διαστάσεις με το τρέχον block
                             if candidate_block.shape != current_block.shape:
-                                continue  # Παράλειψε αν οι διαστάσεις δεν ταιριάζουν
+                                continue  # Παράλειψη αν οι διαστάσεις ΔΕΝ ταιριάζουν
 
                             # Υπολογισμός MAD
-                            mad = np.sum(np.abs(current_block - candidate_block))
+                            mad = calculate_mad(current_block, candidate_block)
 
                             if mad < min_mad:
                                 min_mad = mad
                                 best_match = (search_y, search_x)
 
-                    # Υπολογισμός διανύσματος κίνησης
+                    # Υπολογίζουμε το διανυσμα κίνησης
                     if best_match is None:
                         # Αν δεν βρέθηκε ταίριασμα, χρησιμοποίησε μηδενικό διάνυσμα κίνησης
                         motion_vector = (0, 0)
@@ -188,7 +187,7 @@ def full_search_motion_compensation():
 
                     frame_motion_vectors.append(motion_vector)
 
-                    # Δημιουργία εικόνας σφάλματος
+                    # Δημιουργούμε την εικόνας σφάλματος
                     error_block = (current_block.astype(int) - matched_block.astype(int)).astype(np.int16)
                     error_frame[y:y + 16, x:x + 16] = error_block
 
@@ -202,9 +201,8 @@ def full_search_motion_compensation():
             with open(f"{encoded_folder}/encoded_frame_{i}.bin", "wb") as f:
                 f.write(encoded_frame)
 
-    print("Η εξαντλητική αντιστάθμιση κίνησης ολοκληρώθηκε.")
+    print("Η εξαντλητική αντιστάθμιση κίνησης ολοκληρώθηκε!")
 
-    # Επιστροφή των διανυσμάτων κίνησης και των πλαισίων σφάλματος
     return motion_vectors, error_frames
 
 
