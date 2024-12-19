@@ -10,7 +10,8 @@ def main_menu():
         print("2. Εκτέλεση κωδικοποίησης(Δημιουργία φακέλου encoded_frames)")
         print("3. Εκτέλεση αποκωδικοποίησης(Δημιουργία φακέλου decoded_frames)")
         print("4. Υπολογισμός βαθμού συμπίεσης(Θα πρέπει να προηγηθεί το βήμα 2)")
-        print("5. Έξοδος")
+        print("5. Εξαντλητική αντιστάθμιση κίνησης (Δημιουργία διανυσμάτων κίνησης και πλαισίων σφάλματος)")
+        print("6. Έξοδος")
 
         choice = input("Εισάγετε τον αριθμό της επιλογής σας: ")
 
@@ -23,6 +24,10 @@ def main_menu():
         elif choice == "4":
             calculate_compression_ratio()
         elif choice == "5":
+            motion_vectors, error_frames = full_search_motion_compensation()
+            print("Εξαντλητική αντιστάθμιση κίνησης ολοκληρώθηκε.")
+            print(f"Σύνολο διανυσμάτων κίνησης που υπολογίστηκαν: {len(motion_vectors)}")
+        elif choice == "6":
             print("Έξοδος από το πρόγραμμα.")
             break
         else:
@@ -47,6 +52,8 @@ GOP = 12  # Κάθε 12ο καρέ είναι I-Frame
 encoded_frames = []
 encoded_folder = "encoded_frames"
 decoded_folder = "decoded_frames"
+encoded_folder_motion = "encoded_frames_with_motion"
+
 
 def encode_video():
     if not os.path.exists(encoded_folder):
@@ -112,6 +119,95 @@ def calculate_compression_ratio():
     print(f"Μέγεθος αρχικών δεδομένων: {original_size / (1024 ** 2):.2f} MB")
     print(f"Μέγεθος συμπιεσμένων δεδομένων: {compressed_size / (1024 ** 2):.2f} MB")
     print(f"Συνολικός βαθμός συμπίεσης: {compression_ratio:.2f}")
+
+def calculate_mad(block1, block2):#Υπολογισμός της Μέσης Απόλυτης Διαφοράς (MAD) μεταξύ δύο macroblocks.
+    return np.sum(np.abs(block1 - block2))
+
+def full_search_motion_compensation():
+    if not os.path.exists(encoded_folder_motion):
+        os.makedirs(encoded_folder_motion)
+
+    print("\nΕκτέλεση εξαντλητικής αντιστάθμισης κίνησης...")
+    motion_vectors = []  # Λίστα για τα διανύσματα κίνησης
+    error_frames = []    # Λίστα για τα πλαίσια σφάλματος
+
+    for i in range(frame_count):
+        if i % GOP == 0:  # Αν το καρέ είναι I-frame
+            encoded_frame = zlib.compress(frames[i].tobytes())  # Συμπίεση του I-frame
+            encoded_frames.append(encoded_frame)
+            motion_vectors.append(None)  # Δεν υπάρχει αντιστάθμιση κίνησης για I-frame
+            error_frames.append(np.zeros_like(frames[i]))  # Μηδενικό σφάλμα για I-frame
+        else:  # Αν το καρέ είναι P-frame
+            current_frame = frames[i]
+            previous_frame = frames[i - 1]
+
+            height, width, _ = current_frame.shape
+            error_frame = np.zeros_like(current_frame, dtype=np.int16)
+            frame_motion_vectors = []
+
+            # Εξέταση όλων των macroblocks
+            for y in range(0, height, 16):
+                for x in range(0, width, 16):
+                    # Το macroblock του τρέχοντος καρέ
+                    current_block = current_frame[y:y + 16, x:x + 16]
+
+                    # Ορισμός περιοχής αναζήτησης στο προηγούμενο καρέ
+                    y_min = max(0, y - 8)
+                    y_max = min(height - 16, y + 8)
+                    x_min = max(0, x - 8)
+                    x_max = min(width - 16, x + 8)
+
+                    best_match = None
+                    min_mad = float('inf')
+
+                    # Εξάντληση σε όλη την περιοχή αναζήτησης
+                    for search_y in range(y_min, y_max + 1):
+                        for search_x in range(x_min, x_max + 1):
+                            # Το υποψήφιο macroblock από το προηγούμενο καρέ
+                            candidate_block = previous_frame[search_y:search_y + 16, search_x:search_x + 16]
+
+                            # Εξασφάλισε ότι το υποψήφιο block έχει τις ίδιες διαστάσεις με το τρέχον block
+                            if candidate_block.shape != current_block.shape:
+                                continue  # Παράλειψε αν οι διαστάσεις δεν ταιριάζουν
+
+                            # Υπολογισμός MAD
+                            mad = np.sum(np.abs(current_block - candidate_block))
+
+                            if mad < min_mad:
+                                min_mad = mad
+                                best_match = (search_y, search_x)
+
+                    # Υπολογισμός διανύσματος κίνησης
+                    if best_match is None:
+                        # Αν δεν βρέθηκε ταίριασμα, χρησιμοποίησε μηδενικό διάνυσμα κίνησης
+                        motion_vector = (0, 0)
+                        matched_block = current_block
+                    else:
+                        motion_vector = (best_match[0] - y, best_match[1] - x)
+                        matched_block = previous_frame[best_match[0]:best_match[0] + 16, best_match[1]:best_match[1] + 16]
+
+                    frame_motion_vectors.append(motion_vector)
+
+                    # Δημιουργία εικόνας σφάλματος
+                    error_block = (current_block.astype(int) - matched_block.astype(int)).astype(np.int16)
+                    error_frame[y:y + 16, x:x + 16] = error_block
+
+            # Κωδικοποίηση του πλαισίου σφάλματος
+            encoded_frame = zlib.compress(error_frame.tobytes())
+            encoded_frames.append(encoded_frame)
+            motion_vectors.append(frame_motion_vectors)
+            error_frames.append(error_frame)
+
+            # Αποθήκευση του συμπιεσμένου πλαισίου σφάλματος
+            with open(f"{encoded_folder}/encoded_frame_{i}.bin", "wb") as f:
+                f.write(encoded_frame)
+
+    print("Η εξαντλητική αντιστάθμιση κίνησης ολοκληρώθηκε.")
+
+    # Επιστροφή των διανυσμάτων κίνησης και των πλαισίων σφάλματος
+    return motion_vectors, error_frames
+
+
 
 if __name__ == "__main__":
     main_menu()
